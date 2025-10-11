@@ -82,7 +82,11 @@ async function getUniqueFilename({clipId, id, folder, filename}) {
   const obj = await Storage.session.get(key)
   if (obj) {
     const resolver = T.restoreFilenameConflictResolver(obj);
-    return resolver.resolveFile(id, folder, filename);
+    const resolvedFilename = resolver.resolveFile(id, folder, filename);
+    // store updated resolver
+    const updatedObj = resolver.toObject();
+    await Storage.session.set(key, updatedObj)
+    return resolvedFilename;
   } else {
     return null;
   }
