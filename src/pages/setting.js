@@ -910,7 +910,7 @@ async function resetToDefault(e) {
       Notify.success(I18N.t('label.reset-to-default-success'));
       renderSection('setting-reset-and-backup');
     } catch(e) {
-      Notify.error(e.message);
+      Notify.errorWithStack(e);
     }
   }
 }
@@ -942,13 +942,13 @@ function handleRestoreFilePicker(e) {
           renderSection('setting-reset-and-backup');
         },
         (e) => {
-          Notify.error(e.message);
+          Notify.errorWithStack(e);
         }
       ).catch((e) => {
-        Notify.error(e.message);
+        Notify.errorWithStack(e);
       });
     } catch(e) {
-      Notify.error(e.message);
+      Notify.errorWithStack(e);
     }
   }
   reader.readAsText(file);
