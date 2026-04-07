@@ -6,6 +6,7 @@
 
 import Fetcher from './fetcher.js';
 import ExtApi  from './ext-api.js';
+import Storage from './storage.js';
 import fnv1a   from '../../vendor/fnv1a/index.js';
 
 
@@ -56,6 +57,14 @@ async function modifyHeadersWhenFetch(method, url, requestOptions) {
     }
   }
 
+  try {
+    await Storage.session.remove(ruleId2Key(dnrRule.id));
+  } catch(e) {
+    console.error("failed to remove DNR rule id from storage", dnrRule.id, url);
+    console.error(e);
+    // It's OK, it'll be removed when session ends.
+  }
+
   if (error) { throw error; }
   return result;
 }
@@ -102,23 +111,63 @@ async function handleHeaders(url, headers = {}) {
 
   let dnrRule = undefined;
   if (requestHeaders.length > 0) {
-    dnrRule = {
-      id: urlToRuleId(url),
-      priority: 10,
-      condition: { urlFilter: url },
-      action: {
-        type: 'modifyHeaders',
-        requestHeaders,
-      }
-    };
+    try {
+      const ruleId = await urlToRuleId(url);
+      dnrRule = {
+        id: ruleId,
+        priority: 10,
+        condition: { urlFilter: url },
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders,
+        }
+      };
+    } catch(e) {
+      console.error("Unexpected error occurred when get Rule id");
+      console.error("URL: ", url);
+      console.error(e);
+    }
   }
 
   return {newHeaders, dnrRule};
 }
 
 
-function urlToRuleId(url) {
-  return Number(fnv1a(url, {size: 32}));
+// There's a disgusting bug on Chromium that complain
+// "expected rule id to be an integer, but got number"
+// It turns out that Chromium use a signed 32bit integer as rule id,
+// Which is just not the same as the documentation shows (A javascript number)
+const DNR_RULE_ID_MAX = 2147483646; // 2^^31 - 1
+function toValidRuleId(id) {
+  const v = id % DNR_RULE_ID_MAX;
+  return (v == 0 ? 1 : v); // Rule ID can not be zero
 }
+
+async function urlToRuleId(url) {
+  const hash = Number(fnv1a(url, {size: 32}));
+  let newId = toValidRuleId(hash);
+  return await getUniqueRuleId(newId, url);
+}
+
+function ruleId2Key(id) { return `DNR_SESSION_RULE_ID_${id}`; }
+
+async function getUniqueRuleId(newId, url) {
+  const key = ruleId2Key(newId);
+  const storedUrl = await Storage.session.get(key);
+  if (storedUrl) {
+    if (storedUrl == url) {
+      return newId;
+    } else {
+      // newId collide with other ID.
+      // just try the next one
+      return await getUniqueRuleId(toValidRuleId(newId + 1), url);
+    }
+  } else {
+    // store newId
+    await Storage.session.set(key, url);
+    return newId;
+  }
+}
+
 
 export default {get, head};
